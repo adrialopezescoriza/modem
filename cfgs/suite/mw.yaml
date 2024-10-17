@@ -2,3 +2,12 @@ suite: mw
 iterations: 4
 episode_length: 100
 demo_schedule: linear(0.5, 0.25, 50000)
+
+metaworld:
+  action_repeat: 2
+  max_episode_steps: 100
+  render_mode: "rgb_array" # "human", "rgb_array"
+  reward_mode: ???
+  obs: ???
+  camera:
+      image_size: 224 # 64, 128, 256

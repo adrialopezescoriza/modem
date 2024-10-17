@@ -1,17 +1,19 @@
 defaults:
-    - suite@_global_: adroit
+    - suite@_global_: mw
     - override hydra/launcher: submitit_local
 
 # environment
-task: ???
+task: mw-assembly-semi
+num_envs: 1
 discount: 0.99
 img_size: 224
 frame_stack: 2
 action_repeat: 2
 train_steps: 100000
+obs: rgbd
 
 # demonstrations
-demos: 5
+demos: 0
 
 # planning
 iterations: ???

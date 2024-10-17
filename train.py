@@ -11,13 +11,13 @@ os.environ["MKL_SERVICE_FORCE_INTEL"] = "1"
 os.environ["MUJOCO_GL"] = "egl"
 import torch
 import numpy as np
-import gym
+import gymnasium as gym
 
 gym.logger.set_level(40)
 import time
 from pathlib import Path
 from cfg_parse import parse_cfg
-from env import make_env, set_seed
+from envs import make_env, set_seed
 from algorithm.tdmpc import TDMPC
 from algorithm.helper import Episode, get_demos, ReplayBuffer
 from termcolor import colored
