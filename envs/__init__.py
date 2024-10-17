@@ -1,12 +1,12 @@
 from copy import deepcopy
 import warnings
 
+from collections import defaultdict
+
 import gymnasium as gym
 import numpy as np
 import torch
 import random
-
-from envs.wrappers.tensor import TensorWrapper
 
 def missing_dependencies(task):
 	raise ValueError(f'Missing dependencies for task {task}; install dependencies to use this environment.')
@@ -33,6 +33,27 @@ def set_seed(seed):
     torch.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
 
+class DefaultDictWrapper(gym.Wrapper):
+    def __init__(self, env):
+        gym.Wrapper.__init__(self, env)
+        self.env = env
+        self.success = False
+
+    @property
+    def unwrapped(self):
+        return self.env.unwrapped
+
+    def reset(self, **kwargs):
+        self.success = False
+        return self.env.reset(**kwargs)
+
+    def step(self, action):
+        obs, reward, _, done, info = self.env.step(action)
+        info = defaultdict(float, info)
+        self.success = self.success or bool(info["success"])
+        info["success"] = float(self.success)
+        return obs, reward, done, info
+
 def make_env(cfg):
 	"""
 	Make a vectorized environment for TD-MPC2 experiments.
@@ -47,12 +68,9 @@ def make_env(cfg):
 			pass
 	if env is None:
 		raise ValueError(f'Failed to make environment "{cfg.task}": please verify that dependencies are installed and that the task exists.')
-	env = TensorWrapper(env)
-	try: # Dict
-		cfg.obs_shape = {k: v.shape for k, v in env.observation_space.spaces.items()}
-	except: # Box
-		cfg.obs_shape = {cfg.get('obs', 'state'): env.observation_space.shape}
+	
+	env = DefaultDictWrapper(env)
+	cfg.obs_shape = tuple(int(x) for x in env.observation_space.shape)
+	cfg.action_shape = tuple(int(x) for x in env.action_space.shape)
 	cfg.action_dim = env.action_space.shape[0]
-	cfg.episode_length = env.max_episode_steps
-	cfg.seed_steps = max(1000, 5*cfg.episode_length) * cfg.num_envs
 	return env

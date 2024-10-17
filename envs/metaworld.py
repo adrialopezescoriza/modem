@@ -1,82 +1,75 @@
 import numpy as np
 import gymnasium as gym
 
+from collections import deque
+
 from metaworld.envs import ALL_V2_ENVIRONMENTS_GOAL_OBSERVABLE
-from envs.wrappers.vectorized import Vectorized
+from gymnasium.wrappers import TimeLimit
 from envs.tasks.mw_stages import getRewardWrapper
 
-from envs.utils import convert_observation_to_space
 import torchrl
 
 class MetaWorldWrapper(gym.Wrapper):
-	def __init__(self, env, cfg):
-		super().__init__(env)
-		self.env = env
-		self.cfg = cfg
-		self.env.model.cam_pos[2] = [0.75, 0.075, 0.7]
-		self.max_episode_steps = cfg.max_episode_steps
+    def __init__(self, env, cfg):
+        super().__init__(env)
+        self.env = env
+        self.cfg = cfg
+        self._num_frames = cfg.get("frame_stack", 1)
+        self._frames = deque([], maxlen=self._num_frames)
+        self.env.mujoco_renderer.model.vis.global_.offwidth = cfg.camera.image_size
+        self.env.mujoco_renderer.model.vis.global_.offheight = cfg.camera.image_size
+        self.max_episode_steps = cfg.max_episode_steps
 
-		# Adapt rendering size (this only works for gym <= 0.29)
-		self.env.mujoco_renderer.model.vis.global_.offwidth = cfg.camera.image_size
-		self.env.mujoco_renderer.model.vis.global_.offheight = cfg.camera.image_size
+        self.observation_space = gym.spaces.Box(
+            low=0,
+            high=255,
+            shape=(self._num_frames * 3, cfg.camera.image_size, cfg.camera.image_size),
+            dtype=np.uint8,
+        )
+        self.action_space = self.env.action_space
+        self.camera_name = "corner2"
+        self.env.model.cam_pos[2] = [0.75, 0.075, 0.7]
 
-		self._state_obs, _ = super().reset()
-		self.observation_space = convert_observation_to_space(self.get_obs(self.cfg.obs))
+    @property
+    def state(self):
+        state = self._state_obs.astype(np.float32)
+        return np.concatenate((state[:4], state[18 : 18 + 4])) if self._num_frames >= 2 else state[:4]
 
-	def get_obs(self, obs_type = None):
-		obs_type = self.cfg.obs if obs_type is None else obs_type
-		if obs_type == "state":
-			return self._state_obs
-		elif obs_type in ("rgbd", "rgb"):
-			return {
-				"state": self._get_robot_state(),
-				"rgb_base": self._get_pixel_obs(),
-			}
-		else:
-			raise NotImplementedError
+    def _get_pixel_obs(self):
+        return self.render().transpose(2, 0, 1)
 
-	def reset(self, **kwargs):
-		self._t = 0
-		obs, info = super().reset(**kwargs)
-		obs = self.env.step(np.zeros(self.env.action_space.shape))[0]
-		self._state_obs = obs.astype(np.float32)
-		return self.get_obs(self.cfg.obs), info
+    def _stacked_obs(self):
+        assert len(self._frames) == self._num_frames
+        return np.concatenate(list(self._frames), axis=0)
 
-	def step(self, action):
-		reward = 0
-		for _ in range(self.cfg.action_repeat):
-			obs, r, terminated, _, info = self.env.step(action.copy())
-			reward = r # Options: max, sum, min
-		self._state_obs = obs.astype(np.float32)
-		self._t += 1
-		done = self._t >= self.max_episode_steps
-		return self.get_obs(self.cfg.obs), reward, terminated, done, info
-	
-	def _get_robot_state(self):
-		state = self._state_obs.astype(np.float32)
-		return state[0:4] # Current gripper hand state
+    def reset(self):
+        self.env.reset()
+        obs = self.env.step(np.zeros_like(self.env.action_space.sample()))[0].astype(
+            np.float32
+        )
+        self._state_obs = obs
+        obs = self._get_pixel_obs()
+        for _ in range(self._num_frames):
+            self._frames.append(obs)
+        return self._stacked_obs()
 
-	def _get_pixel_obs(self):
-		img = self.render()
-		return img.transpose(2, 0, 1)
+    def step(self, action):
+        reward = 0
+        for _ in range(self.cfg.action_repeat):
+            obs, r, _, _, info = self.env.step(action)
+            reward = r
+        obs = obs.astype(np.float32)
+        self._state_obs = obs
+        obs = self._get_pixel_obs()
+        self._frames.append(obs)
+        return self._stacked_obs(), reward, False, False, info
 
-	@property
-	def unwrapped(self):
-		return self.env.unwrapped
+    def render(self, *args, **kwargs):
+        if self.env.camera_name in ("corner", "corner2"):
+            return np.flip(self.env.render(*args, **kwargs), axis=0)
+        return self.env.render(*args, **kwargs)
 
-	def render(self, *args, **kwargs):
-		# BUG: MuJoco Rendering bug, corner images are flipped for some reason
-		if self.env.camera_name in ("corner", "corner2"):
-			return np.flip(self.env.render(*args, **kwargs), axis=0)
-		return self.env.render(*args, **kwargs)
-	
-	def get_state(self):
-		return self.env.get_env_state()
-	
-	def set_state(self, env_state):
-		self.env.set_env_state(env_state)
-
-def _make_env(cfg):
+def make_env(cfg):
 	"""
 	Make Meta-World environment.
 	"""
@@ -84,24 +77,17 @@ def _make_env(cfg):
 	env_id = '-'.join(parts[1:-1])  + "-v2-goal-observable"
 	if not cfg.task.startswith('mw-') or env_id not in ALL_V2_ENVIRONMENTS_GOAL_OBSERVABLE:
 		raise ValueError('Unknown task:', cfg.task)
-	cfg.metaworld.reward_mode = parts[-1]
-	cfg.metaworld.obs = cfg.get("obs", "state")
-	if cfg.metaworld.reward_mode == "semi":
-		cfg.metaworld.reward_mode = "semi_sparse"
+	cfg.reward_mode = parts[-1]
+	cfg.state_dim = 4 * cfg.get("frame_stack", 1)
+	if cfg.reward_mode == "semi":
+		cfg.reward_mode = "semi_sparse"
 	env = ALL_V2_ENVIRONMENTS_GOAL_OBSERVABLE[env_id](
 			seed=cfg.seed, 
-			render_mode=cfg.metaworld.render_mode,
+			render_mode=cfg.render_mode,
 		)
 	env.camera_name = "corner2"
 	env._freeze_rand_vec = False
-	env = getRewardWrapper(env_id)(env, cfg.metaworld)
-	env = MetaWorldWrapper(env, cfg.metaworld)
-	return env
-
-def make_env(cfg):
-	"""
-	Make Vectorized Meta-World environment.
-	"""
-	env = Vectorized(cfg, _make_env)
-	cfg.state_dim = 4
+	env = getRewardWrapper(env_id)(env, cfg)
+	env = MetaWorldWrapper(env, cfg)
+	env = TimeLimit(env, max_episode_steps=cfg.episode_length)
 	return env

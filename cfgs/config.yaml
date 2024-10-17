@@ -7,7 +7,7 @@ task: mw-assembly-semi
 num_envs: 1
 discount: 0.99
 img_size: 224
-frame_stack: 2
+frame_stack: 1
 action_repeat: 2
 train_steps: 100000
 obs: rgbd
@@ -50,8 +50,8 @@ mlp_dim: 512
 latent_dim: 50
 
 # wandb (required: fill in your details)
-wandb_project: ???
-wandb_entity: ???
+wandb_project: modem
+wandb_entity: alopez
 
 # dirs (required: fill in your details)
 logging_dir: .
