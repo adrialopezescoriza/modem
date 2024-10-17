@@ -19,7 +19,7 @@ from pathlib import Path
 from cfg_parse import parse_cfg
 from envs import make_env, set_seed
 from algorithm.tdmpc import TDMPC
-from algorithm.helper import Episode, get_demos, ReplayBuffer
+from algorithm.helper import Episode, get_demos, load_dataset, ReplayBuffer
 from termcolor import colored
 from copy import deepcopy
 import logger
@@ -66,7 +66,7 @@ def train(cfg: dict):
 
     # Load demonstrations
     if cfg.get("demos", 0) > 0:
-        for episode in get_demos(cfg):
+        for episode in load_dataset(cfg, cfg.demos):
             demo_buffer += episode
         print(colored(f"Loaded {cfg.demos} demonstrations", "yellow", attrs=["bold"]))
         print(colored("Phase 1: policy pretraining", "red", attrs=["bold"]))

@@ -12,9 +12,6 @@ action_repeat: 2
 train_steps: 100000
 obs: rgbd
 
-# demonstrations
-demos: 0
-
 # planning
 iterations: ???
 num_samples: 512
@@ -55,7 +52,7 @@ wandb_entity: alopez
 
 # dirs (required: fill in your details)
 logging_dir: .
-demo_dir: ???
+demo_dir: /hdd/adria/demo_data/Metaworld/rgb/tdmpc/Assembly_25.pkl
 
 # misc
 seed: 1

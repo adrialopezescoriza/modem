@@ -9,6 +9,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import glob
+import pickle
 from PIL import Image
 from pathlib import Path
 from torch import distributions as pyd
@@ -325,6 +326,35 @@ def get_demos(cfg):
         episodes.append(episode)
     return episodes
 
+def load_dataset(cfg, num_traj=None, success_only=False):
+    """
+    Dataset must be stored as list of np.arrays
+
+    trajectories is a list of trajectory
+    trajectories[0] has keys like: ['actions', 'dones', ...]
+
+    Note: next_observations means the observation resulting from a given action
+    """
+    with open(cfg.demo_dir, 'rb') as f:
+        trajectories = pickle.load(f)
+    if success_only:
+        trajectories = [t for t in trajectories if t['infos'][-1]['success']]
+    if num_traj is not None:
+        trajectories = trajectories[:num_traj]
+
+    episodes = []
+    for traj in trajectories:
+        episode = Episode.from_trajectory(
+            cfg=cfg,
+            obs=torch.stack(traj['next_observations' if 'next_observations' in traj.keys() else 'observations'])["rgb_base"],
+            states=torch.stack(traj['next_observations' if 'next_observations' in traj.keys() else 'observations'])["state"],
+            action=np.array(torch.stack(traj['actions'][1:]), dtype=np.float32),
+            reward=np.array(traj['rewards'][1:], dtype=np.float32),
+        )
+        episodes.append(episode)
+
+    return episodes
+
 
 class ReplayBuffer(object):
     """
@@ -440,7 +470,7 @@ class ReplayBuffer(object):
         obs = (
             self._get_obs(self._obs, idxs)
             if self.cfg.frame_stack > 1
-            else self._obs[idxs].cuda(non_blocking=True)
+            else self._obs[idxs].cuda(non_blocking=True).float()
         )
         next_obs_shape = (3 * self.cfg.frame_stack, *self._last_obs.shape[-2:])
         next_obs = torch.empty(
