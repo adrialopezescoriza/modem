@@ -43,8 +43,10 @@ def evaluate(env, agent, cfg, step, env_step, video):
             if video:
                 video.record(env)
             t += 1
-        episode_rewards.append(ep_reward.cpu())
-        episode_successes.append(info.get("success", 0))
+        episode_rewards.append(ep_reward.item() if hasattr(ep_reward, "item") else ep_reward)
+        episode_successes.append(info.get("success", 0).item()
+                                 if hasattr(info.get("success", 0), "item") 
+                                 else info.get("success", 0))
         if video:
             video.save(env_step)
     return np.nanmean(episode_rewards), np.nanmean(episode_successes)

@@ -2,8 +2,9 @@ import numpy as np
 import gymnasium as gym
 import torch
 
+from collections import deque
+
 from envs.tasks.bigym_stages import SUPPORTED_TASKS
-from envs.wrappers.vectorized import Vectorized
 from gymnasium.wrappers.rescale_action import RescaleAction
 
 from envs.utils import convert_observation_to_space
@@ -13,31 +14,48 @@ class BiGymWrapper(gym.Wrapper):
 		super().__init__(env)
 		self.env = env
 		self.cfg = cfg
-		self.observation_space = convert_observation_to_space(self.select_obs(self.get_observation()))
+		self.observation_space = convert_observation_to_space(self.get_obs())
+
+		self._num_frames = cfg.get("frame_stack", 1)
+		self._frames = deque([], maxlen=self._num_frames)
+		self._state_frames = deque([], maxlen=self._num_frames)
 
 	def select_obs(self, obs):
 		if self.cfg.obs == "state":
 			return np.concatenate([v for v in obs.values()])
-		processed = {"state": np.empty((0,))}
+		state = np.empty((0,))
+		images = []
 		for k, v in obs.items():
 			if k.startswith("proprioception"):
-				processed["state"] = np.concatenate((processed["state"], v))
+				state = np.concatenate((state, v))
 			elif k.startswith("rgb"):
-				processed[k] = v
+				images.append(v)
 			else:
 				raise NotImplementedError
-		return processed
+		return np.stack(images), state
+
+	def get_state(self):
+		return self.select_obs(self.env.get_observation())[1]
+	
+	@property
+	def state(self):
+		return np.concatenate(list(self._state_frames), axis=0)
+	
+	def _stacked_obs(self):
+		assert len(self._frames) == self._num_frames
+		return np.concatenate(list(self._frames), axis=1)
 	
 	def rand_act(self):
 		return self.action_space.sample().astype(np.float32)
 
-	def reset(self, **kwargs):
+	def reset(self, seed=None):
 		self._t = 0
-		obs, info = super().reset(**kwargs)
-		return self.select_obs(obs), info
-	
-	def get_penalties(self):
-		return self.env.joint_vel_penalty()
+		obs, info = self.env.reset(seed=seed, options=None)
+		for _ in range(self._num_frames):
+			obs, state = self.select_obs(obs)
+			self._frames.append(obs)
+			self._state_frames.append(state)
+		return self._stacked_obs()
 
 	def step(self, action):
 		reward = 0
@@ -46,10 +64,14 @@ class BiGymWrapper(gym.Wrapper):
 		for _ in range(self.cfg.action_repeat):
 			obs, r, terminated, _, info = self.env.step(action)
 			reward = r # Options: max, sum, min
+		if isinstance(obs, dict):
+			obs, state = self.select_obs(obs)
+		self._frames.append(obs)
+		self._state_frames.append(state)
 		self._t += 1
 		done = self._t >= self.max_episode_steps
 		info["success"] = info["task_success"]
-		return self.select_obs(obs), reward, False, done, info
+		return self._stacked_obs(), reward, False, done, info
 
 	@property
 	def unwrapped(self):
@@ -59,9 +81,9 @@ class BiGymWrapper(gym.Wrapper):
 		return self.env.render(*args, **kwargs)
 	
 	def get_obs(self, *args, **kwargs):
-		return self.select_obs(self.get_observation())
+		return self.select_obs(self.env.get_observation())[0]
 
-def _make_env(cfg):
+def make_env(cfg):
 	"""
 	Make Meta-World environment.
 	"""
@@ -70,19 +92,14 @@ def _make_env(cfg):
 		raise ValueError('Unknown task:', cfg.task)
 	env = SUPPORTED_TASKS[env_id](
 			obs_mode=cfg.obs, 
-		    img_size=cfg.bigym.camera.image_size,
-            render_mode=cfg.bigym.render_mode,
+		    img_size=cfg.camera.image_size,
+            render_mode=cfg.render_mode,
 			start_seed=cfg.seed, 
 		)
-	cfg.bigym.obs = cfg.obs
+	cfg.obs = cfg.obs
 	env = RescaleAction(env, -1.0, 1.0)
-	env = BiGymWrapper(env, cfg.bigym)
-	return env
-
-def make_env(cfg):
-	"""
-	Make Vectorized BiGym environment.
-	"""
-	env = Vectorized(cfg, _make_env)
-	cfg.action_penalty = cfg.bigym.get("action_penalty", False)
+	env = BiGymWrapper(env, cfg)
+	cfg.state_dim = env.get_state().shape[-1]
+	cfg.img_size = cfg.camera.image_size
+	cfg.episode_length = env.max_episode_steps
 	return env
