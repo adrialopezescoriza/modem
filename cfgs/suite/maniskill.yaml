@@ -1,4 +1,15 @@
 suite: maniskill
 iterations: 6
-episode_length: 500
+episode_length: 100
 demo_schedule: linear(0.75, 0.25, 50000)
+
+action_repeat: 2
+frame_stack: 1
+demos: 50
+obs_keys: ["agent", "image"]
+max_episode_steps: 100
+sim_backend: gpu
+action_penalty: false
+camera:
+    image_size: 128 # 64, 128, 256
+demo_dir: /hdd/adria/demo_data/Maniskill3/rgb/tdmpc/StackCube_50.pkl

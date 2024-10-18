@@ -23,7 +23,7 @@ class MetaWorldWrapper(gym.Wrapper):
         self.observation_space = gym.spaces.Box(
             low=0,
             high=255,
-            shape=(self._num_frames * 3, cfg.camera.image_size, cfg.camera.image_size),
+            shape=self._get_pixel_obs().shape,
             dtype=np.uint8,
         )
         self.action_space = self.env.action_space
@@ -36,7 +36,7 @@ class MetaWorldWrapper(gym.Wrapper):
         return np.concatenate((state[:4], state[18 : 18 + 4])) if self._num_frames >= 2 else state[:4]
 
     def _get_pixel_obs(self):
-        return self.render().transpose(2, 0, 1)
+        return np.expand_dims(self.render().transpose(2, 0, 1), axis=0)
 
     def _stacked_obs(self):
         assert len(self._frames) == self._num_frames

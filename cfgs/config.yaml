@@ -1,9 +1,9 @@
 defaults:
-    - suite@_global_: mw
+    - suite@_global_: maniskill
     - override hydra/launcher: submitit_local
 
 # environment
-task: mw-assembly-semi
+task: stack-cube-semi
 num_envs: 1
 discount: 0.99
 img_size: 224
@@ -52,7 +52,6 @@ wandb_entity: alopez
 
 # dirs (required: fill in your details)
 logging_dir: .
-demo_dir: /hdd/adria/demo_data/Metaworld/rgb/tdmpc/Assembly_25.pkl
 
 # misc
 seed: 1

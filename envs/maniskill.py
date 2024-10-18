@@ -2,8 +2,10 @@ import gymnasium as gym
 import numpy as np
 import torch
 from envs.utils import convert_observation_to_space
-from envs.wrappers.drS_reward import DrsRewardWrapper
+
 from mani_skill.utils.common import flatten_state_dict
+
+from collections import deque
 
 import mani_skill.envs
 import envs.tasks.maniskill_stages
@@ -94,7 +96,7 @@ MANISKILL_TASKS = {
 	),
 }
 
-def select_obs(keys, obs):
+def select_obs(obs):
 	"""
 	Processes observations on the first nested level of the obs dictionary
 
@@ -104,19 +106,9 @@ def select_obs(keys, obs):
 	"""
 	if not isinstance(obs, dict):
 		return obs
-	processed = dict()
-	for k in keys:
-		if k == "agent":
-			# Stack all states
-			processed["state"] = flatten_state_dict(obs[k], use_torch=True)
-		elif k == "image":
-			# Only take rgb + Put channel dimension first
-			processed["rgb_base"] = obs['sensor_data']['base_camera']['rgb'].permute(0,3,1,2)
-			# processed["rgb_ext"] = obs['sensor_data']['ext_camera']['rgb'].permute(0,3,1,2)
-			processed["rgb_hand"] = obs['sensor_data']['hand_camera']['rgb'].permute(0,3,1,2)
-		else:
-			return NotImplementedError
-	return processed
+	image = torch.stack((obs['sensor_data']['base_camera']['rgb'].permute(0,3,1,2), obs['sensor_data']['hand_camera']['rgb'].permute(0,3,1,2)), dim=1).squeeze()
+	state = flatten_state_dict(obs["agent"], use_torch=True).squeeze()
+	return image, state
 
 class ManiSkillWrapper(gym.Wrapper):
 	def __init__(self, env, cfg):
@@ -126,12 +118,12 @@ class ManiSkillWrapper(gym.Wrapper):
 		self.action_space = env.single_action_space
 		self.max_episode_steps = cfg.max_episode_steps
 
-		self.obs_keys = cfg.get("obs_keys", None)
+		self._num_frames = cfg.get("frame_stack", 1)
+		self._frames = deque([], maxlen=self._num_frames)
+		self._state_frames = deque([], maxlen=self._num_frames)
 
 		if hasattr(self.env.observation_space, 'spaces'):
-			# Dict
-			obs_sample = {k: v[0] for k, v in self.get_obs().items()}
-			self.observation_space = convert_observation_to_space(obs_sample)
+			self.observation_space = convert_observation_to_space(self.get_obs())
 		else:
 			self.observation_space = gym.spaces.Box(
 				low=np.full(
@@ -145,6 +137,14 @@ class ManiSkillWrapper(gym.Wrapper):
 				dtype=np.float32,
 			)
 
+	@property
+	def state(self):
+		return torch.cat(list(self._state_frames), dim=0)
+	
+	def _stacked_obs(self):
+		assert len(self._frames) == self._num_frames
+		return torch.cat(list(self._frames), dim=0)
+	
 	def rand_act(self):
 		return torch.tensor(
 			[self.action_space.sample().astype(np.float32) for _ in range(self.num_envs)],
@@ -153,23 +153,30 @@ class ManiSkillWrapper(gym.Wrapper):
 	def reset(self, seed=None):
 		self._t = 0
 		obs, info = self.env.reset(seed=seed, options=None)
-		return (select_obs(self.obs_keys, obs) if isinstance(obs, dict) else obs), info
+		for _ in range(self._num_frames):
+			obs, state = select_obs(obs)
+			self._frames.append(obs)
+			self._state_frames.append(state)
+		return self._stacked_obs()
 	
 	def step(self, action):
 		for _ in range(self.cfg.action_repeat):
 			obs, r, terminated, _, info = self.env.step(action)
 			reward = r # Options: max, sum, min
 		if isinstance(obs, dict):
-			obs = select_obs(self.obs_keys, obs)
+			obs, state = select_obs(obs)
+		self._frames.append(obs)
+		self._state_frames.append(state)
 		self._t += 1
 		done = torch.tensor([self._t >= self.max_episode_steps] * self.num_envs)
-		return obs, reward, terminated, done, info
+		return self._stacked_obs(), reward, terminated, done, info
 	
 	def reward(self, **kwargs):
 		return self.env.get_reward(obs=self.env.get_obs(), action=self.env.action_space.sample(), info=self.env.get_info())
 	
 	def get_obs(self, *args, **kwargs):
-		return select_obs(self.obs_keys, self.env.get_obs())
+		obs, state = select_obs(self.env.get_obs())
+		return obs
 
 	@property
 	def unwrapped(self):
@@ -188,7 +195,7 @@ def make_env(cfg):
 	if cfg.task not in MANISKILL_TASKS:
 		raise ValueError('Unknown task:', cfg.task)
 	task_cfg = MANISKILL_TASKS[cfg.task]
-	camera_resolution = dict(width=cfg.maniskill.camera.get("image_size", 64), height=cfg.maniskill.camera.get("image_size", 64))
+	camera_resolution = dict(width=cfg.camera.get("image_size", 64), height=cfg.camera.get("image_size", 64))
 
 	# WARNING: If one env is already in GPU, the other ones must also be in GPU
 	env = gym.make(
@@ -201,14 +208,10 @@ def make_env(cfg):
 		sensor_configs=camera_resolution,
 		human_render_camera_configs=dict(width=384, height=384),
 		reconfiguration_freq=1 if cfg.num_envs > 1 else None,
-		sim_backend=cfg.maniskill.get("sim_backend", "auto"),
+		sim_backend=cfg.get("sim_backend", "auto"),
 		render_backend="auto",
 	)
-
-	cfg.action_penalty = cfg.maniskill.action_penalty
-
-	# DrS Reward Wrapper
-	if task_cfg.get("reward_mode", None) == "drS":
-		env = DrsRewardWrapper(env, cfg.drS_ckpt)
-	env = ManiSkillWrapper(env, cfg.maniskill)
+	env = ManiSkillWrapper(env, cfg)
+	cfg.state_dim = flatten_state_dict(env.unwrapped.get_obs()["agent"], use_torch=True).shape[-1]
+	cfg.img_size = cfg.camera.image_size
 	return env

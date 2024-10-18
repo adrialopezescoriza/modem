@@ -106,30 +106,31 @@ class Flatten(nn.Module):
         super().__init__()
 
     def forward(self, x):
-        return x.view(x.size(0), -1)
-
+        return x.reshape(x.size(0), -1)
 
 def enc(cfg):
     """Returns our MoDem encoder that takes a stack of 224x224 frames as input."""
-    C = int(3 * cfg.frame_stack)
-    layers = [
-        NormalizeImg(),
-        nn.Conv2d(C, cfg.num_channels, 7, stride=2),
-        nn.ReLU(),
-        nn.Conv2d(cfg.num_channels, cfg.num_channels, 5, stride=2),
-        nn.ReLU(),
-        nn.Conv2d(cfg.num_channels, cfg.num_channels, 3, stride=2),
-        nn.ReLU(),
-        nn.Conv2d(cfg.num_channels, cfg.num_channels, 3, stride=2),
-        nn.ReLU(),
-        nn.Conv2d(cfg.num_channels, cfg.num_channels, 3, stride=2),
-        nn.ReLU(),
-        nn.Conv2d(cfg.num_channels, cfg.num_channels, 3, stride=2),
-        nn.ReLU(),
-    ]
-    out_shape = _get_out_shape((C, cfg.img_size, cfg.img_size), layers)
-    layers.extend([Flatten(), nn.Linear(np.prod(out_shape), cfg.latent_dim)])
-    return nn.Sequential(*layers)
+    if cfg.img_size <= 0:
+        return None
+        
+    C = int(cfg.obs_shape[1])
+    encoders = []
+    n_layers = 3 if cfg.obs_shape[-1] > 200 else 2 # Heuristic
+    for _ in range(cfg.obs_shape[0]):
+        layers = [
+            NormalizeImg(),
+            nn.Conv2d(C, cfg.num_channels, 7, stride=2),
+            nn.ReLU(),
+            nn.Conv2d(cfg.num_channels, cfg.num_channels, 5, stride=2),
+            nn.ReLU(),
+            *([nn.Conv2d(cfg.num_channels, cfg.num_channels, 3, stride=2), nn.ReLU()] * n_layers),
+            nn.Conv2d(cfg.num_channels, cfg.num_channels, 3, stride=2),
+            nn.ReLU(),
+        ]
+        out_shape = _get_out_shape((C, cfg.img_size, cfg.img_size), layers)
+        layers.extend([Flatten(), nn.Linear(np.prod(out_shape), cfg.latent_dim)])
+        encoders.append(nn.Sequential(*layers))
+    return encoders
 
 
 def state_enc(cfg):
@@ -186,8 +187,9 @@ class RandomShiftsAug(nn.Module):
         )  # maintain same padding ratio as in original implementation
 
     def forward(self, x):
-        n, _, h, w = x.size()
+        n, v, c, h, w = x.size()
         assert h == w
+        x = x.reshape(-1,*x.shape[-3:])
         padding = tuple([self.pad] * 4)
         x = F.pad(x, padding, "replicate")
         eps = 1.0 / (h + 2 * self.pad)
@@ -196,13 +198,13 @@ class RandomShiftsAug(nn.Module):
         )[:h]
         arange = arange.unsqueeze(0).repeat(h, 1).unsqueeze(2)
         base_grid = torch.cat([arange, arange.transpose(1, 0)], dim=2)
-        base_grid = base_grid.unsqueeze(0).repeat(n, 1, 1, 1)
+        base_grid = base_grid.unsqueeze(0).repeat(n*v, 1, 1, 1)
         shift = torch.randint(
-            0, 2 * self.pad + 1, size=(n, 1, 1, 2), device=x.device, dtype=x.dtype
+            0, 2 * self.pad + 1, size=(n*v, 1, 1, 2), device=x.device, dtype=x.dtype
         )
         shift *= 2.0 / (h + 2 * self.pad)
         grid = base_grid + shift
-        return F.grid_sample(x, grid, padding_mode="zeros", align_corners=False)
+        return F.grid_sample(x, grid, padding_mode="zeros", align_corners=False).reshape((n,v,c,h,w))
 
 
 class Episode(object):
@@ -344,9 +346,12 @@ def load_dataset(cfg, num_traj=None, success_only=False):
 
     episodes = []
     for traj in trajectories:
+        obs = torch.stack(traj['next_observations' if 'next_observations' in traj.keys() else 'observations'])
+        keys = [k for k in obs.keys() if k.startswith('rgb')]
+        obs = torch.stack([obs[k] for k in keys], dim=1)
         episode = Episode.from_trajectory(
             cfg=cfg,
-            obs=torch.stack(traj['next_observations' if 'next_observations' in traj.keys() else 'observations'])["rgb_base"],
+            obs=obs,
             states=torch.stack(traj['next_observations' if 'next_observations' in traj.keys() else 'observations'])["state"],
             action=np.array(torch.stack(traj['actions'][1:]), dtype=np.float32),
             reward=np.array(traj['rewards'][1:], dtype=np.float32),
@@ -366,7 +371,7 @@ class ReplayBuffer(object):
         self.cfg = cfg
         self.device = torch.device("cpu")
         self.capacity = 2 * cfg.train_steps + 1
-        obs_shape = (3, *cfg.obs_shape[-2:])
+        obs_shape = (cfg.obs_shape[0], cfg.obs_shape[1]//cfg.frame_stack, *cfg.obs_shape[-2:])
         self._state_dim = cfg.state_dim
         self._obs = torch.empty(
             (self.capacity + 1, *obs_shape), dtype=torch.uint8, device=self.device
@@ -404,12 +409,15 @@ class ReplayBuffer(object):
         return self
 
     def add(self, episode: Episode):
-        obs = episode.obs[:-1, -3:]
-        if episode.obs.shape[1] == 3:
-            last_obs = episode.obs[-self.cfg.frame_stack :].view(
-                self.cfg.frame_stack * 3, *self.cfg.obs_shape[-2:]
-            )
+        assert(len(episode.obs.shape)==5)
+
+        obs = episode.obs[:-1, :, -(self.cfg.obs_shape[1]//self.cfg.frame_stack):]
+        if episode.obs.shape[2] == (self.cfg.obs_shape[1]//self.cfg.frame_stack):
+            last_obs = torch.split(episode.obs[-self.cfg.frame_stack:],1,dim=0)
+            last_obs = torch.cat(last_obs, dim=2)
+            last_obs = torch.squeeze(last_obs, dim=0)
         else:
+            assert(episode.obs.shape[2] == self.cfg.obs_shape[1])
             last_obs = episode.obs[-1]
         self._obs[self.idx : self.idx + self.cfg.episode_length] = obs
         self._last_obs[self.idx // self.cfg.episode_length] = last_obs
@@ -443,17 +451,17 @@ class ReplayBuffer(object):
 
     def _get_obs(self, arr, idxs):
         obs = torch.empty(
-            (self.cfg.batch_size, self.cfg.frame_stack * 3, *arr.shape[-2:]),
+            (self.cfg.batch_size, self.cfg.obs_shape[0], self.cfg.obs_shape[1], *arr.shape[-2:]),
             dtype=arr.dtype,
             device=torch.device("cuda"),
         )
-        obs[:, -3:] = arr[idxs].cuda(non_blocking=True)
+        obs[:, :,-(self.cfg.obs_shape[1]//self.cfg.frame_stack):] = arr[idxs].cuda(non_blocking=True)
         _idxs = idxs.clone()
         mask = torch.ones_like(_idxs, dtype=torch.bool)
         for i in range(1, self.cfg.frame_stack):
             mask[_idxs % self.cfg.episode_length == 0] = False
             _idxs[mask] -= 1
-            obs[:, -(i + 1) * 3 : -i * 3] = arr[_idxs].cuda(non_blocking=True)
+            obs[:,:, -(i + 1) * (self.cfg.obs_shape[1]//self.cfg.frame_stack) : -i * (self.cfg.obs_shape[1]//self.cfg.frame_stack)] = arr[_idxs].cuda(non_blocking=True)
         return obs.float()
 
     def sample(self):
@@ -472,7 +480,7 @@ class ReplayBuffer(object):
             if self.cfg.frame_stack > 1
             else self._obs[idxs].cuda(non_blocking=True).float()
         )
-        next_obs_shape = (3 * self.cfg.frame_stack, *self._last_obs.shape[-2:])
+        next_obs_shape = (self.cfg.obs_shape[0], self.cfg.obs_shape[1], *self._last_obs.shape[-2:])
         next_obs = torch.empty(
             (self.cfg.horizon + 1, self.cfg.batch_size, *next_obs_shape),
             dtype=obs.dtype,

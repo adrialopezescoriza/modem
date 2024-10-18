@@ -16,11 +16,11 @@ class TOLD(nn.Module):
     def __init__(self, cfg):
         super().__init__()
         self.cfg = cfg
-        self._encoder = h.enc(cfg)
-        self._state_encoder = nn.ModuleList(h.state_enc(cfg))
         self._dynamics = h.mlp(
             cfg.latent_dim + cfg.action_dim, cfg.mlp_dim, cfg.latent_dim
         )
+        self._encoder = nn.ModuleList(h.enc(cfg))
+        self._state_encoder = nn.ModuleList(h.state_enc(cfg))
         self._reward = h.mlp(cfg.latent_dim + cfg.action_dim, cfg.mlp_dim, 1)
         self._pi = h.mlp(cfg.latent_dim, cfg.mlp_dim, cfg.action_dim)
         self._Q1, self._Q2 = h.q(cfg), h.q(cfg)
@@ -36,8 +36,10 @@ class TOLD(nn.Module):
 
     def h(self, obs, state):
         """Encodes an observation into its latent representation (h)."""
-        x = self._encoder(obs)
-        x = x + self._state_encoder[0](state)
+        x = self._state_encoder[0](state)
+        if self.cfg.img_size > 0:
+            for i, enc in enumerate(self._encoder):
+                x = enc(obs[:,i]) + x
         x = self._state_encoder[1](x)
         return x
 

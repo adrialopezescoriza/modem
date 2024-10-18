@@ -12,3 +12,4 @@ reward_mode: ???
 obs: ???
 camera:
     image_size: 224 # 64, 128, 256
+demo_dir: /hdd/adria/demo_data/Metaworld/rgb/tdmpc/Assembly_25.pkl

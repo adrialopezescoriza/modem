@@ -43,7 +43,7 @@ def evaluate(env, agent, cfg, step, env_step, video):
             if video:
                 video.record(env)
             t += 1
-        episode_rewards.append(ep_reward)
+        episode_rewards.append(ep_reward.cpu())
         episode_successes.append(info.get("success", 0))
         if video:
             video.save(env_step)
@@ -116,8 +116,8 @@ def train(cfg: dict):
             "step": step,
             "env_step": env_step,
             "total_time": time.time() - start_time,
-            "episode_reward": episode.cumulative_reward,
-            "episode_success": info.get("success", 0),
+            "episode_reward": episode.cumulative_reward.item() if isinstance(episode.cumulative_reward, torch.Tensor) else episode.cumulative_reward,
+            "episode_success": info.get("success", 0).item() if isinstance(info.get("success", 0), torch.Tensor) else info.get("success", 0),
         }
         train_metrics.update(common_metrics)
         L.log(train_metrics, category="train")
