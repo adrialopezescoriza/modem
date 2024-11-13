@@ -61,16 +61,16 @@ def train(cfg: dict):
     work_dir = Path(cfg.logging_dir) / "logs" / cfg.task / cfg.exp_name / str(cfg.seed)
     print(colored("Work dir:", "yellow", attrs=["bold"]), work_dir)
     env, agent = make_env(cfg), TDMPC(cfg)
-    demo_buffer = ReplayBuffer(deepcopy(cfg)) if cfg.get("demos", 0) > 0 else None
+    demo_buffer = ReplayBuffer(deepcopy(cfg)) if cfg.get("n_demos", 0) > 0 else None
     buffer = ReplayBuffer(cfg)
     L = logger.Logger(work_dir, cfg)
     print(agent.model)
 
     # Load demonstrations
-    if cfg.get("demos", 0) > 0:
-        for episode in load_dataset(cfg, cfg.demos):
+    if cfg.get("n_demos", 0) > 0:
+        for episode in load_dataset(cfg, cfg.n_demos):
             demo_buffer += episode
-        print(colored(f"Loaded {cfg.demos} demonstrations", "yellow", attrs=["bold"]))
+        print(colored(f"Loaded {cfg.n_demos} demonstrations", "yellow", attrs=["bold"]))
         print(colored("Phase 1: policy pretraining", "red", attrs=["bold"]))
         agent.init_bc(demo_buffer if cfg.get("demo_schedule", 0) != 0 else buffer)
         print(colored("\nPhase 2: seeding", "green", attrs=["bold"]))

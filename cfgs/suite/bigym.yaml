@@ -5,7 +5,6 @@ demo_schedule: linear(0.75, 0.25, 50000)
 
 action_repeat: 1
 frame_stack: 1
-demos: 50
 render_mode: "rgb_array"
 camera:
     image_size: 128 # 64, 128, 256

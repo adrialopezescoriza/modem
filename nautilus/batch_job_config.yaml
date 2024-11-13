@@ -7,7 +7,7 @@ obs: ['rgbd']
 
 # training
 train_steps: [500_000]
-demo_path: ["/{{pvc}}/drS/demo_data/Maniskill3/rgb/tdmpc/StackCube_200.pkl"]
+demo_dir: ["/{{pvc}}/drS/demo_data/Maniskill3/rgb/tdmpc/StackCube_200.pkl"]
 
 # logging
 wandb_project: ['debugging']

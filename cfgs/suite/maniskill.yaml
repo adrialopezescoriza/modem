@@ -5,7 +5,6 @@ demo_schedule: linear(0.75, 0.25, 50000)
 
 action_repeat: 2
 frame_stack: 1
-demos: 50
 obs_keys: ["agent", "image"]
 max_episode_steps: 100
 sim_backend: gpu
