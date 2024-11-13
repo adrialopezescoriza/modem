@@ -218,7 +218,7 @@ class TDMPC:
         """Initialize policy using a behavior cloning objective (iterations: 2x #samples)."""
         self.model.train()
         for _ in tqdm(
-            range(2 * self.cfg.demos * self.cfg.episode_length), "Pretraining policy"
+            range(2 * self.cfg.n_demos * self.cfg.episode_length), "Pretraining policy"
         ):
             obs, _, action, _, state, _, _, _ = buffer.sample()
             self.bc_optim.zero_grad(set_to_none=True)
