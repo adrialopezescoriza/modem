@@ -107,7 +107,9 @@ def select_obs(obs):
 	if not isinstance(obs, dict):
 		return obs
 	image = torch.stack((obs['sensor_data']['base_camera']['rgb'].permute(0,3,1,2), obs['sensor_data']['hand_camera']['rgb'].permute(0,3,1,2)), dim=1).squeeze()
-	state = flatten_state_dict(obs["agent"], use_torch=True).squeeze()
+	state_agent = flatten_state_dict(obs["agent"], use_torch=True)
+	state_extra = flatten_state_dict(obs["extra"], use_torch=True)
+	state = torch.cat([state_agent, state_extra], dim=-1)
 	return image, state
 
 class ManiSkillWrapper(gym.Wrapper):
@@ -212,6 +214,6 @@ def make_env(cfg):
 		render_backend="auto",
 	)
 	env = ManiSkillWrapper(env, cfg)
-	cfg.state_dim = flatten_state_dict(env.unwrapped.get_obs()["agent"], use_torch=True).shape[-1]
+	cfg.state_dim = select_obs(env.unwrapped.get_obs())[1].shape[-1]
 	cfg.img_size = cfg.camera.image_size
 	return env

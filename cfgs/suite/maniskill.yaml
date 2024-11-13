@@ -12,4 +12,4 @@ sim_backend: gpu
 action_penalty: false
 camera:
     image_size: 128 # 64, 128, 256
-demo_dir: /hdd/adria/demo_data/Maniskill3/rgb/tdmpc/StackCube_50.pkl
+demo_dir: /hdd/adria/demo_data/Maniskill3/rgb/tdmpc/StackCube_200.pkl

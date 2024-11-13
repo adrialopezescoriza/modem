@@ -1,0 +1,19 @@
+seed: [0]
+
+# environment
+task: ["stack-cube-semi"]
+num_envs: [1]
+obs: ['rgbd']
+
+# training
+train_steps: [500_000]
+demo_path: ["/{{pvc}}/drS/demo_data/Maniskill3/rgb/tdmpc/StackCube_200.pkl"]
+
+# logging
+wandb_project: ['debugging']
+eval_freq: [5000]
+save_freq: [100_000]
+
+# misc
+# tag: ['normal'] # speedups, ...
+n_demos: [25] # 200, 100, 50, 25, 10, 0

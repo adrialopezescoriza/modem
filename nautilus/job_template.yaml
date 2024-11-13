@@ -1,0 +1,72 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{name}}
+  namespace: {{namespace}}
+spec:
+  template:
+    spec:
+      containers:
+      - name: {{name}}
+        image: {{image}}
+        workingDir: /root
+        imagePullPolicy: Always
+        command: ["/bin/bash"]
+        args: 
+          - "-c"
+          - |
+            mkdir -p /{{pvc}}/{{name}} && # Ensure the log directory exists
+            exec > >(tee /{{pvc}}/{{name}}/output.log) 2>&1 # Redirect stdout and stderr
+            cp -r /{{pvc}}/.ssh /root &&
+            git clone -b {{branch}} git@github.com:{{user}}/{{repo}}.git &&
+            cd {{repo}} && 
+            source activate base &&
+            conda activate {{conda_env}} &&
+            wandb login {{wandb_key}} &&
+            {{cmd}}
+        env:
+          - name: KUBERNETES_NODENAME
+            valueFrom:
+              fieldRef:
+                fieldPath: spec.nodeName
+        resources:
+          requests:
+            cpu: "{{cpu}}"
+            memory: {{mem}}Gi
+            ephemeral-storage: {{disk}}Gi
+            nvidia.com/gpu: "{{gpu}}"
+          limits:
+            cpu: "{{cpu}}"
+            memory: {{mem}}Gi
+            ephemeral-storage: {{disk}}Gi
+            nvidia.com/gpu: "{{gpu}}"
+        volumeMounts:
+          - mountPath: /dev/shm
+            name: dshm
+          - mountPath: /{{pvc}}
+            name: {{pvc}}
+      restartPolicy: Never
+      volumes:
+        - name: dshm
+          emptyDir:
+            medium: Memory
+        - name: {{pvc}}
+          persistentVolumeClaim:
+            claimName: {{pvc}}
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: nvidia.com/gpu.product
+                    operator: In
+                    values:
+                      {{allowed_gpus}}
+                  - key: kubernetes.io/hostname
+                    operator: NotIn
+                    values:
+                      - k8s-chase-ci-07.calit2.optiputer.net
+                      - k8s-gen4-sm.calit2.optiputer.net
+                      - hcc-chase-shor-c4715.unl.edu
+
+  backoffLimit: 0

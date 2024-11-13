@@ -11,6 +11,7 @@ frame_stack: 1
 action_repeat: 2
 train_steps: 100000
 obs: rgbd
+algorithm: Modem
 
 # planning
 iterations: ???
@@ -47,7 +48,7 @@ mlp_dim: 512
 latent_dim: 50
 
 # wandb (required: fill in your details)
-wandb_project: modem
+wandb_project: debugging
 wandb_entity: alopez
 
 # dirs (required: fill in your details)
@@ -70,3 +71,4 @@ obs_shape: ???
 action_shape: ???
 action_dim: ???
 state_dim: ???
+n_demos: 25
