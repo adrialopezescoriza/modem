@@ -1,6 +1,7 @@
 # Demos and logging
 demonstrations/
 outputs/
+nautilus/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

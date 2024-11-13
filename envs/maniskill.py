@@ -109,7 +109,7 @@ def select_obs(obs):
 	image = torch.stack((obs['sensor_data']['base_camera']['rgb'].permute(0,3,1,2), obs['sensor_data']['hand_camera']['rgb'].permute(0,3,1,2)), dim=1).squeeze()
 	state_agent = flatten_state_dict(obs["agent"], use_torch=True)
 	state_extra = flatten_state_dict(obs["extra"], use_torch=True)
-	state = torch.cat([state_agent, state_extra], dim=-1)
+	state = torch.cat([state_agent, state_extra], dim=-1).squeeze()
 	return image, state
 
 class ManiSkillWrapper(gym.Wrapper):
