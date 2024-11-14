@@ -119,6 +119,12 @@ class Logger(object):
         project, entity = cfg.get("wandb_project", "none"), cfg.get(
             "wandb_entity", "none"
         )
+        if cfg.disable_wandb:
+            print(colored("Wandb disabled.", "blue", attrs=["bold"]))
+            cfg.save_video = False
+            self._wandb = None
+            self._video = None
+            return
         import wandb
 
         wandb.init(

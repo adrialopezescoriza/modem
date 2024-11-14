@@ -50,6 +50,7 @@ latent_dim: 50
 # wandb (required: fill in your details)
 wandb_project: debugging
 wandb_entity: alopez
+disable_wandb: true
 
 # dirs (required: fill in your details)
 logging_dir: .
