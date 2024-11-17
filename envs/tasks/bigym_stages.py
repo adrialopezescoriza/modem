@@ -177,6 +177,9 @@ class DrawerTopOpenStages(BiGymStages, DrawerTopOpen):
                         0.27309757, 0.47346738, 1.4556292 , 0.24234204, 0.        ,
                         1.        ])
         
+        low_[:-2] = -np.maximum(np.abs(low_[:-2]), np.abs(high_[:-2]))
+        high_[:-2] = np.maximum(np.abs(low_[:-2]), np.abs(high_[:-2]))
+        
         self.action_space_ = Box(low=low_ - 0.01, high=high_ + 0.01)
         self.action_space = copy.deepcopy(self.action_space_)
 
@@ -207,15 +210,23 @@ class MovePlateStages(BiGymStages, MovePlate):
             **kwargs,
         )
 
-        low_ = np.array([-0.01962075, -0.07761819, -0.06895841, -0.26554358, -0.18311483,
-                        -0.26119497, -0.29295182, -0.49999997, -0.2771536 , -0.14540102,
-                        -0.14482735, -0.2845109 , -0.5536907 ,  0.        ,  0.        ])
-        
-        high_ = np.array([0.0175525 , 0.03667733, 0.14617348, 0.09228504, 0.08773132,
-                        0.12075103, 0.26808703, 0.631871  , 0.103172  , 0.10693253,
-                        0.12817591, 0.23806447, 0.42442662, 1.        , 0.        ])
+        low_ = np.array([-0.013808913751082397, -0.0704437115513544, -0.044111660399443045, -0.12211434948275667, -0.07497095519834923, -0.10250870169544338, -0.22409308213672105, -0.11237218953320596, -0.08422653435534315, -0.0619491953155609, -0.09051931280612294, -0.09452514428128195, -0.08132082976621421,  0.        ,  0.        ])
+        high_ = np.array([0.016208030010028077, 0.03667733, 0.05222308990327722, 0.10834931636441768, 0.07592123916829427, 0.1023473424144509, 0.23652349755346666, 0.10962118375352708, 0.08035618146311439, 0.06331323132367488, 0.09211422082640891, 0.09024699154919119, 0.07943677882907141, 1.        , 0.        ])
 
-        self.action_space_ = Box(low=low_ - 0.01, high=high_ + 0.01)
+        # low_ = np.array([-0.01962075, -0.07761819, -0.06895841, -0.26554358, -0.18311483,
+        #                 -0.26119497, -0.29295182, -0.49999997, -0.2771536 , -0.14540102,
+        #                 -0.14482735, -0.2845109 , -0.5536907 ,  0.        ,  0.        ])
+        
+        # high_ = np.array([0.0175525 , 0.03667733, 0.14617348, 0.09228504, 0.08773132,
+        #                 0.12075103, 0.26808703, 0.631871  , 0.103172  , 0.10693253,
+        #                 0.12817591, 0.23806447, 0.42442662, 1.        , 0.        ])
+        
+        # low_[:-2] = -np.maximum(np.abs(low_[:-2]), np.abs(high_[:-2]))
+        # high_[:-2] = np.maximum(np.abs(low_[:-2]), np.abs(high_[:-2]))
+
+        tolerance = 0.001
+        
+        self.action_space_ = Box(low=low_ - tolerance, high=high_ + tolerance)
         self.action_space = copy.deepcopy(self.action_space_)
 
     def compute_stage_indicators(self):
@@ -307,7 +318,7 @@ class PickBoxStages(BiGymStages, PickBox):
     def __init__(self, obs_mode, img_size, *args, **kwargs):
         self.n_stages = 4
         self.reward_mode = "semi_sparse"
-        self.max_episode_steps = 600
+        self.max_episode_steps = 500
         action_mode=JointPositionActionMode(floating_base=True, floating_dofs=[PelvisDof.X, PelvisDof.Y, PelvisDof.Z, PelvisDof.RZ])
 
         super().__init__(
@@ -330,6 +341,9 @@ class PickBoxStages(BiGymStages, PickBox):
                         0.05100107, 0.05727863, 0.6134118 , 0.50238436, 0.70846236,
                         0.19214949, 0.16949272, 0.70000005, 0.65224624, 0.        ,
                         0.        ])
+        
+        low_[:-2] = -np.maximum(np.abs(low_[:-2]), np.abs(high_[:-2]))
+        high_[:-2] = np.maximum(np.abs(low_[:-2]), np.abs(high_[:-2]))
         
         self.action_space_ = Box(low=low_ - 0.01, high=high_ + 0.01)
         self.action_space = copy.deepcopy(self.action_space_)
