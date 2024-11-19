@@ -79,17 +79,28 @@ from mani_skill.envs.tasks.tabletop.pick_cube import PickCubeEnv
 class PickAndPlace_DrS_learn(DrS_BaseEnv, PickCubeEnv):
     def __init__(self, *args, **kwargs):
         self.n_stages = 3
-        super().__init__(*args, **kwargs)
+        super().__init__(*args, robot_uids="panda_wristcam", **kwargs)
 
-    def check_obj_placed(self):
-        obj_to_goal_pos = self.goal_pos - self.obj_pose.p
-        return np.linalg.norm(obj_to_goal_pos) <= self.goal_thresh
+    # def _get_obs_extra(self, info):
+    #     # in reality some people hack is_grasped into observations by checking if the gripper can close fully or not
+    #     obs = dict(
+    #         is_grasped=info["is_grasped"],
+    #         tcp_pose=self.agent.tcp.pose.raw_pose,
+    #         goal_pos=self.goal_site.pose.p,
+    #     )
+    #     if "state" in self.obs_mode:
+    #         obs.update(
+    #             obj_pose=self.cube.pose.raw_pose,
+    #             tcp_to_obj_pos=self.cube.pose.p - self.agent.tcp.pose.p,
+    #             obj_to_goal_pos=self.goal_site.pose.p - self.cube.pose.p,
+    #         )
+    #     return obs
 
     def compute_stage_indicator(self):
         eval_info = self.evaluate()
         return {
             'is_grasped': (eval_info['is_grasped']).float(),
-            'is_obj_placed': (eval_info['is_obs_placed']).float(),
+            'is_obj_placed': (eval_info['is_obj_placed']).float(),
         }
 
 ############################################
