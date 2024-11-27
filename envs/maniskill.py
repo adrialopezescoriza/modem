@@ -43,6 +43,16 @@ MANISKILL_TASKS = {
 		control_mode='pd_ee_delta_pose',
 		reward_mode='dense',
 	),
+	'two-robot-pick-cube': dict(
+		env='TwoRobotPickCube_DrS_learn',
+		control_mode='pd_ee_delta_pose',
+		reward_mode='dense',
+	),
+	'two-robot-stack-cube': dict(
+		env='TwoRobotStackCube_DrS_learn',
+		control_mode='pd_ee_delta_pose',
+		reward_mode='dense',
+	),
 	'lift-peg-upright': dict(
 		env='LiftPegUpright_DrS_learn',
 		control_mode='pd_ee_delta_pose',
@@ -51,6 +61,16 @@ MANISKILL_TASKS = {
 	'poke-cube': dict(
 		env='PokeCube_DrS_learn',
 		control_mode='pd_ee_delta_pose',
+		reward_mode='dense',
+	),
+	'humanoid-place-apple': dict(
+		env='HumanoidPlaceApple_DrS_learn',
+		control_mode='pd_joint_delta_pos',
+		reward_mode='dense',
+	),
+	'humanoid-transport-box': dict(
+		env='HumanoidTransportBox_DrS_learn',
+		control_mode='pd_joint_delta_pos',
 		reward_mode='dense',
 	),
 	## Semi-sparse reward tasks with stage-indicators
@@ -79,20 +99,25 @@ MANISKILL_TASKS = {
 		control_mode='pd_ee_delta_pose',
 		reward_mode='semi_sparse', 
 	),
-	'pick-place-drS': dict (
-		env='PickAndPlace_DrS_learn',
+	'two-robot-pick-cube-semi': dict(
+		env='TwoRobotPickCube_DrS_learn',
 		control_mode='pd_ee_delta_pose',
-		reward_mode='drS', 
+		reward_mode='semi_sparse',
 	),
-	'stack-cube-drS': dict (
-		env='StackCube_DrS_learn',
+	'two-robot-stack-cube-semi': dict(
+		env='TwoRobotStackCube_DrS_learn',
 		control_mode='pd_ee_delta_pose',
-		reward_mode='drS', 
+		reward_mode='semi_sparse',
 	),
-	'peg-insertion-drS': dict (
-		env='PegInsertionSide_DrS_learn',
-		control_mode='pd_ee_delta_pose',
-		reward_mode='drS', 
+	'humanoid-place-apple-semi': dict(
+		env='HumanoidPlaceApple_DrS_learn',
+		control_mode='pd_joint_delta_pos',
+		reward_mode='semi_sparse',
+	),
+	'humanoid-transport-box-semi': dict(
+		env='HumanoidTransportBox_DrS_learn',
+		control_mode='pd_joint_delta_pos',
+		reward_mode='semi_sparse',
 	),
 }
 
@@ -106,7 +131,16 @@ def select_obs(obs):
 	"""
 	if not isinstance(obs, dict):
 		return obs
-	image = torch.stack((obs['sensor_data']['base_camera']['rgb'].permute(0,3,1,2), obs['sensor_data']['hand_camera']['rgb'].permute(0,3,1,2)), dim=1).squeeze()
+
+	if "hand_camera" in obs["sensor_data"].keys():
+		second_camera = "hand_camera"
+	elif "ext_camera" in obs["sensor_data"].keys():
+		second_camera = "ext_camera"
+	elif "head_camera" in obs["sensor_data"].keys():
+		second_camera = "head_camera"
+	else:
+		raise NotImplementedError
+	image = torch.stack((obs['sensor_data']['base_camera']['rgb'].permute(0,3,1,2), obs['sensor_data'][second_camera]['rgb'].permute(0,3,1,2)), dim=1).squeeze()
 	state_agent = flatten_state_dict(obs["agent"], use_torch=True)
 	state_extra = flatten_state_dict(obs["extra"], use_torch=True)
 	state = torch.cat([state_agent, state_extra], dim=-1).squeeze()

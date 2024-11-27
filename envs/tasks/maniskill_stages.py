@@ -4,10 +4,26 @@ from mani_skill.agents.registration import register_agent
 from mani_skill.sensors.camera import CameraConfig
 from mani_skill.agents.robots.panda import PandaWristCam
 from mani_skill.utils import sapien_utils
+import gymnasium as gym
 import numpy as np
 import torch
 import sapien
 from typing import Union
+from envs.utils import convert_observation_to_space, flatten_space
+
+class MultiRobotWrapper(gym.ActionWrapper):
+    def __init__(self, env):
+        super().__init__(env)
+        self.action_space = flatten_space(env.action_space)
+        self.single_action_space = flatten_space(env.single_action_space)
+
+    def action(self, action):
+        ac = {}
+        counter = 0
+        for k, v in self.env.action_space.items():
+            ac[k] = action[..., counter:counter+v.shape[-1]]
+            counter += v.shape[-1]
+        return ac
 
 @register_agent()
 class PandaWristCamPegCustom(PandaWristCam):
@@ -19,11 +35,12 @@ class PandaWristCamPegCustom(PandaWristCam):
     def _sensor_configs(self):
         pose2 = sapien_utils.look_at([0.0, 0.0, 0.0], [0.0, 0.0, 0.4])
         pose3 = sapien_utils.look_at([0.0, 0.0, 0.0], [1.0, 0.0, 0.3])
+        q = pose3.q.squeeze().tolist() if isinstance(pose3.q, torch.Tensor) else pose3.q
         return [
             CameraConfig(
                 uid="hand_camera",
                 pose = sapien.Pose(p=[0, 0, 0],
-                                   q=pose3.q),
+                                   q=q),
                 width=128,
                 height=128,
                 fov=1.2 * np.pi / 2,
@@ -80,21 +97,6 @@ class PickAndPlace_DrS_learn(DrS_BaseEnv, PickCubeEnv):
     def __init__(self, *args, **kwargs):
         self.n_stages = 3
         super().__init__(*args, robot_uids="panda_wristcam", **kwargs)
-
-    # def _get_obs_extra(self, info):
-    #     # in reality some people hack is_grasped into observations by checking if the gripper can close fully or not
-    #     obs = dict(
-    #         is_grasped=info["is_grasped"],
-    #         tcp_pose=self.agent.tcp.pose.raw_pose,
-    #         goal_pos=self.goal_site.pose.p,
-    #     )
-    #     if "state" in self.obs_mode:
-    #         obs.update(
-    #             obj_pose=self.cube.pose.raw_pose,
-    #             tcp_to_obj_pos=self.cube.pose.p - self.agent.tcp.pose.p,
-    #             obj_to_goal_pos=self.goal_site.pose.p - self.cube.pose.p,
-    #         )
-    #     return obs
 
     def compute_stage_indicator(self):
         eval_info = self.evaluate()
@@ -259,11 +261,14 @@ class TwoRobotPickCube_DrS_learn(DrS_BaseEnv, TwoRobotPickCube):
             <= self.goal_thresh
         )
 
+        is_right_arm_static = self.right_agent.is_static(0.2)
+
         return {
             "is_cube_reachable": cube_at_other_side,
             "is_cube_grasped": is_grasped,
-            "is_cube_placed": is_obj_placed,
-            "success": torch.logical_and(is_obj_placed, self.right_agent.is_static()),
+            "is_obj_placed": is_obj_placed,
+            "is_right_arm_static": is_right_arm_static,
+            "success": torch.logical_and(is_obj_placed, is_right_arm_static),
         }
 
     def compute_stage_indicator(self):
@@ -271,7 +276,27 @@ class TwoRobotPickCube_DrS_learn(DrS_BaseEnv, TwoRobotPickCube):
         return {
             'stage_1': (torch.logical_or(eval_info["is_cube_reachable"], eval_info["success"])).float(), # allow releasing the cube when stacked
             'stage_2': (torch.logical_or(eval_info["is_cube_grasped"], eval_info["success"])).float(),
-            'stage_3': (torch.logical_or(eval_info["is_cube_placed"], eval_info["success"])).float(),
+            'stage_3': (torch.logical_or(eval_info["is_obj_placed"], eval_info["success"])).float(),
+        }
+    
+############################################
+# Two Robot StackCube
+############################################
+
+from mani_skill.envs.tasks.tabletop.two_robot_stack_cube import TwoRobotStackCube
+
+@register_env("TwoRobotStackCube_DrS_learn", max_episode_steps=100)
+class TwoRobotStackCube_DrS_learn(DrS_BaseEnv, TwoRobotStackCube):
+    def __init__(self, *args, **kwargs):
+        self.n_stages = 4
+        super().__init__(*args, **kwargs)
+
+    def compute_stage_indicator(self):
+        eval_info = self.evaluate()
+        return {
+            'stage_1': (torch.logical_or(eval_info["cubeB_placed"], eval_info["success"])).float(), # allow releasing the cube when stacked
+            'stage_2': (torch.logical_or(eval_info["is_cubeA_grasped"], eval_info["success"])).float(),
+            'stage_3': (torch.logical_or(eval_info["is_cubeA_on_cubeB"], eval_info["success"])).float(),
         }
     
 ############################################
@@ -319,3 +344,155 @@ class PokeCube_DrS_learn(DrS_BaseEnv, PokeCubeEnv):
             'stage_1': (torch.logical_or(eval_info["is_peg_grasped"], eval_info["success"])).float(), # allow releasing the cube when stacked
             'stage_2': (torch.logical_or(eval_info["head_to_cube_dist"] <= (self.cube_half_size + 0.03), eval_info["success"])).float(),
         }
+    
+############################################
+# Humanoid Place Apple
+############################################
+
+from mani_skill.envs.tasks.humanoid import UnitreeG1PlaceAppleInBowlEnv
+
+@register_env("HumanoidPlaceApple_DrS_learn", max_episode_steps=100)
+class HumanoidPlaceApple_DrS_learn(DrS_BaseEnv, UnitreeG1PlaceAppleInBowlEnv):
+    def __init__(self, *args, **kwargs):
+        self.n_stages = 3
+        super().__init__(*args, **kwargs)
+
+    def evaluate(self):
+        is_obj_placed_xy = (
+            torch.linalg.norm(self.bowl.pose.p[:, :-1] - self.apple.pose.p[:, :-1], axis=1) <= 0.1
+        )
+        is_obj_placed = (
+            torch.linalg.norm(self.bowl.pose.p - self.apple.pose.p, axis=1) <= 0.05
+        )
+        hand_outside_bowl = (
+            self.agent.right_tcp.pose.p[:, 2] > self.bowl.pose.p[:, 2] + 0.125
+        )
+        is_grasped = self.agent.right_hand_is_grasping(self.apple, max_angle=110)
+        return {
+            "success": is_obj_placed & hand_outside_bowl,
+            "hand_outside_bowl": hand_outside_bowl,
+            "is_obj_placed": is_obj_placed,
+            "is_obj_placed_xy": is_obj_placed_xy,
+            "is_grasped": is_grasped,
+        }
+
+    def compute_stage_indicator(self):
+        eval_info = self.evaluate()
+        return {
+            'stage_1': (torch.logical_or(eval_info["is_grasped"], eval_info["is_obj_placed_xy"])).float(), # allow releasing the cube when stacked
+            'stage_2': eval_info["is_obj_placed_xy"].float(),
+        }
+    
+    @property
+    def _default_sensor_configs(self):
+        return CameraConfig(
+            "base_camera",
+            sapien.Pose(
+                [0.279123, 0.303438, 1.34794], [0.252428, 0.396735, 0.114442, -0.875091]
+            ),
+            128,
+            128,
+            np.pi / 2,
+            0.01,
+            100,
+        )
+    
+############################################
+# Humanoid Transport Box
+############################################
+
+from mani_skill.envs.tasks.humanoid import TransportBoxEnv
+
+@register_env("HumanoidTransportBox_DrS_learn", max_episode_steps=100)
+class TransportBox_DrS_learn(DrS_BaseEnv, TransportBoxEnv):
+    def __init__(self, *args, **kwargs):
+        self.n_stages = 3
+        super().__init__(*args, **kwargs)
+
+    def evaluate(self):
+        # left_hand_grasped_box = self.agent.left_hand_is_grasping(self.box, max_angle=110)
+        # right_hand_grasped_box = self.agent.right_hand_is_grasping(self.box, max_angle=110)
+        l_contact_forces = (
+            (
+                self.scene.get_pairwise_contact_forces(
+                    self.agent.robot.links_map["left_five_link"], self.box
+                )
+                + self.scene.get_pairwise_contact_forces(
+                    self.agent.robot.links_map["left_three_link"], self.box
+                )
+                + self.scene.get_pairwise_contact_forces(
+                    self.agent.robot.links_map["left_palm_link"], self.box
+                )
+            )
+            .abs()
+            .sum(dim=1)
+        )
+        r_contact_forces = (
+            (
+                self.scene.get_pairwise_contact_forces(
+                    self.agent.robot.links_map["right_five_link"], self.box
+                )
+                + self.scene.get_pairwise_contact_forces(
+                    self.agent.robot.links_map["right_three_link"], self.box
+                )
+                + self.scene.get_pairwise_contact_forces(
+                    self.agent.robot.links_map["right_palm_link"], self.box
+                )
+            )
+            .abs()
+            .sum(dim=1)
+        )
+        left_hand_hit_box = l_contact_forces > 10
+        right_hand_hit_box = r_contact_forces > 10
+        # is grasping the box if both hands contact the box and the tcp of the hands are below the grasp points on the box.
+        box_grasped = (
+            left_hand_hit_box
+            & right_hand_hit_box
+            & (
+                self.agent.right_tcp.pose.p[:, 2]
+                < self.box_right_grasp_point.p[:, 2] + 0.04
+            )
+            & (
+                self.agent.left_tcp.pose.p[:, 2]
+                < self.box_left_grasp_point.p[:, 2] + 0.04
+            )
+        )
+
+        # simply requires box to be resting somewhere on the correct table
+        box_at_correct_table_z = (0.751 > self.box.pose.p[:, 2]) & (
+            self.box.pose.p[:, 2] > 0.750
+        )
+        box_at_correct_table_xy = (
+            (0.78 > self.box.pose.p[:, 0])
+            & (self.box.pose.p[:, 0] > -0.78)
+            & (1.0 > self.box.pose.p[:, 1])
+            & (self.box.pose.p[:, 1] > 0.0)
+        )
+        # box_at_correct_table = torch.linalg.norm(self.box.pose.p - torch.tensor([0, 0.66, 0.731], device=self.device), dim=1) < 0.05
+        box_at_correct_table = box_at_correct_table_z & box_at_correct_table_xy
+
+        facing_table_with_box = (-1.7 < self.agent.robot.qpos[:, 0]) & (
+            self.agent.robot.qpos[:, 0] < -1.4
+        )  # in this range the robot is probably facing the box on the left table.
+        return {
+            "success": ~box_grasped & box_at_correct_table,
+            "left_hand_hit_box": l_contact_forces > 0,
+            "right_hand_hit_box": r_contact_forces > 0,
+            "box_grasped": box_grasped,
+            "box_at_correct_table_xy": box_at_correct_table_xy,
+            "facing_table_with_box": facing_table_with_box,
+        }
+
+    def compute_stage_indicator(self):
+        eval_info = self.evaluate()
+        return {
+            'stage_1': (torch.logical_or(eval_info["box_grasped"], eval_info["box_at_correct_table_xy"])).float(), # allow releasing the cube when stacked
+            'stage_2': (torch.logical_or(eval_info["box_at_correct_table_xy"], eval_info["success"])).float(),
+        }
+    
+    @property
+    def _default_sensor_configs(self):
+        pose = sapien_utils.look_at([1.0, 0.0, 1.6], [0, 0.0, 0.65])
+        return [
+            CameraConfig("base_camera", pose=pose, width=128, height=128, fov=np.pi / 3)
+        ]
