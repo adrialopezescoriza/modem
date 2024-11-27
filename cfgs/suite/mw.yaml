@@ -1,5 +1,5 @@
 suite: mw
-iterations: 4
+iterations: 1
 episode_length: 100
 demo_schedule: linear(0.5, 0.25, 50000)
 
@@ -11,4 +11,4 @@ reward_mode: ???
 obs: ???
 camera:
     image_size: 224 # 64, 128, 256
-demo_dir: /hdd/adria/demo_data/Metaworld/rgb/tdmpc/Assembly_25.pkl
+demo_dir: /hdd/adria/demo_data/Metaworld/rgb/tdmpc/Assembly_50.pkl

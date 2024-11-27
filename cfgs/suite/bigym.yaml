@@ -1,5 +1,5 @@
 suite: bigym
-iterations: 8
+iterations: 1
 episode_length: ???
 demo_schedule: linear(0.75, 0.25, 50000)
 
@@ -8,4 +8,4 @@ frame_stack: 1
 render_mode: "rgb_array"
 camera:
     image_size: 128 # 64, 128, 256
-demo_dir: /hdd/adria/demo_data/BiGym/rgb/human/MovePlate.pkl
+demo_dir: /hdd/adria/demo_data/BiGym/rgb/human/DrawerTopOpen.pkl
