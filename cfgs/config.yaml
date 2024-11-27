@@ -8,7 +8,6 @@ num_envs: 1
 discount: 0.99
 img_size: 224
 frame_stack: 1
-action_repeat: 2
 train_steps: 100000
 obs: rgbd
 algorithm: Modem

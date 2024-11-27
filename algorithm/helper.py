@@ -347,12 +347,13 @@ def load_dataset(cfg, num_traj=None, success_only=False):
     episodes = []
     for traj in trajectories:
         obs = torch.stack(traj['next_observations' if 'next_observations' in traj.keys() else 'observations'])
+        states = obs["state"] if "state" in obs.keys() else torch.zeros(len(obs),1)
         keys = [k for k in obs.keys() if k.startswith('rgb')]
         obs = torch.stack([obs[k] for k in keys], dim=1)
         episode = Episode.from_trajectory(
             cfg=cfg,
             obs=obs,
-            states=torch.stack(traj['next_observations' if 'next_observations' in traj.keys() else 'observations'])["state"],
+            states=states,
             action=np.array(torch.stack(traj['actions'][1:]), dtype=np.float32),
             reward=np.array(traj['rewards'][1:], dtype=np.float32),
         )
