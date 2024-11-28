@@ -41,21 +41,13 @@ class DefaultDictWrapper(gym.Wrapper):
     def __init__(self, env):
         gym.Wrapper.__init__(self, env)
         self.env = env
-        self.success = False
 
     @property
     def unwrapped(self):
         return self.env.unwrapped
-
-    def reset(self, **kwargs):
-        self.success = False
-        return self.env.reset(**kwargs)
-
     def step(self, action):
         obs, reward, _, done, info = self.env.step(action)
         info = defaultdict(float, info)
-        self.success = self.success or bool(info["success"])
-        info["success"] = float(self.success)
         return obs, reward, done, info
 
 def make_env(cfg):
