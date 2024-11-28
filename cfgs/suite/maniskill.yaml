@@ -1,5 +1,5 @@
 suite: maniskill
-iterations: 1
+iterations: 4
 episode_length: 100
 demo_schedule: linear(0.75, 0.25, 50000)
 
