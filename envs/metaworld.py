@@ -42,8 +42,8 @@ class MetaWorldWrapper(gym.Wrapper):
         assert len(self._frames) == self._num_frames
         return np.concatenate(list(self._frames), axis=0)
 
-    def reset(self):
-        self.env.reset()
+    def reset(self, **kwargs):
+        self.env.reset(**kwargs)
         obs = self.env.step(np.zeros_like(self.env.action_space.sample()))[0].astype(
             np.float32
         )
