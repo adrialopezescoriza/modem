@@ -186,9 +186,9 @@ class ManiSkillWrapper(gym.Wrapper):
 			[self.action_space.sample().astype(np.float32) for _ in range(self.num_envs)],
 			dtype=torch.float32, device=self.env.device)
 
-	def reset(self, seed=None):
+	def reset(self, seed=None, **kwargs):
 		self._t = 0
-		obs, info = self.env.reset(seed=seed, options=None)
+		obs, info = self.env.reset(seed=seed, **kwargs)
 		for _ in range(self._num_frames):
 			obs, state = select_obs(obs)
 			self._frames.append(obs)
